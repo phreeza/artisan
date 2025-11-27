@@ -1210,6 +1210,8 @@ class PIDcontrol:
         self.pidIWP:bool = False          # Advanced Integral Windup Prevention
         self.pidIRoC:bool = False         # Reset integral on large setpoint changes
         self.pidIRoCthreshold:float = 30  # SP threshold beyond which the integral will be reset if pidRIoC is set
+        self.pidDeadbandInitial:float = 0.0  # Initial deadband value (in temperature units)
+        self.pidDeadbandDuration:float = 0.0  # Duration for deadband decay (in seconds)
         # pidSource
         #   either the TC4 input channel from [1,..,4] if self.qmc.device == 19 (Arduino/TC4)
         #   in all other cases (HOTTOP, MODBUS,..), 1 is interpreted as BT and 2 as ET, 3 as 0xT1, 4 as 0xT2, 5 as 1xT1, ...
@@ -1407,6 +1409,7 @@ class PIDcontrol:
         self.aw.qmc.pid.setIntegralResetOnSP(self.pidIRoC)
         self.aw.qmc.pid.setSetpointChangeThreshold(self.pidIRoCthreshold)
         self.aw.qmc.pid.setIntegralLimitFactor(self.pidIlimitFactor)
+        self.aw.qmc.pid.setDeadbandDecay(self.pidDeadbandInitial, self.pidDeadbandDuration)
 
 
     # if send_command is False, the pidOn command is not forwarded to the external PID (TC4, Kaleido, ..)

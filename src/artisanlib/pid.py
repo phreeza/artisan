@@ -104,6 +104,9 @@ class PID:
         'integral_reset_on_setpoint_change',
         'back_calculation_factor',
         'integral_just_reset',
+        'deadband_initial',
+        'deadband_duration',
+        'deadband_start_time',
     ]
 
     def __init__(
@@ -182,6 +185,11 @@ class PID:
         self.integral_just_reset: bool = (
             True  # Flag to prevent integration immediately after reset
         )
+
+        # Deadband decay settings
+        self.deadband_initial: float = 0.0  # Initial deadband value (in same units as error)
+        self.deadband_duration: float = 0.0  # Duration over which deadband decays to 0 (in seconds)
+        self.deadband_start_time: float|None = None  # Time when PID was initialized/started
 
     def _smooth_output(self, output: float) -> float:
         # create or update smoothing decay weights
@@ -363,6 +371,19 @@ class PID:
             i = self._smooth_input(i)
             now = time.time()
             err = self.target - i
+
+            # Apply deadband decay if enabled
+            if (self.deadband_initial > 0 and self.deadband_duration > 0 and
+                self.deadband_start_time is not None):
+                elapsed = now - self.deadband_start_time
+                if elapsed < self.deadband_duration:
+                    # Calculate linearly decaying deadband
+                    decay_factor = 1.0 - (elapsed / self.deadband_duration)
+                    current_deadband = self.deadband_initial * decay_factor
+                    # If error is within deadband, treat as zero error
+                    if abs(err) < current_deadband:
+                        err = 0.0
+
             if self.lastError is None or self.lastTime is None:
                 self.lastTime = now
                 self.lastError = err
@@ -498,6 +519,9 @@ class PID:
 
             # Reset integral windup prevention state
             self.integral_just_reset = False
+
+            # Reset deadband decay start time
+            self.deadband_start_time = time.time()
 
             # Note: Integral windup prevention settings are not reset as they are configuration
         finally:
@@ -717,5 +741,31 @@ class PID:
         try:
             self.pidSemaphore.acquire(1)
             return self.setpoint_change_threshold
+        finally:
+            self.pidSemaphore.release(1)
+
+    def setDeadbandDecay(self, initial: float, duration: float) -> None:
+        """Set the deadband decay parameters.
+
+        Args:
+            initial: Initial deadband value (in same units as error/temperature)
+            duration: Duration over which deadband decays to 0 (in seconds)
+        """
+        try:
+            self.pidSemaphore.acquire(1)
+            self.deadband_initial = max(0.0, initial)
+            self.deadband_duration = max(0.0, duration)
+        finally:
+            self.pidSemaphore.release(1)
+
+    def getDeadbandDecay(self) -> tuple[float, float]: # pyrefly: ignore[bad-return]
+        """Get the current deadband decay parameters.
+
+        Returns:
+            tuple: (initial, duration)
+        """
+        try:
+            self.pidSemaphore.acquire(1)
+            return (self.deadband_initial, self.deadband_duration)
         finally:
             self.pidSemaphore.release(1)
