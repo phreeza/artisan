@@ -1410,6 +1410,12 @@ class PIDcontrol:
         self.aw.qmc.pid.setSetpointChangeThreshold(self.pidIRoCthreshold)
         self.aw.qmc.pid.setIntegralLimitFactor(self.pidIlimitFactor)
         self.aw.qmc.pid.setDeadbandDecay(self.pidDeadbandInitial, self.pidDeadbandDuration)
+        # Set CHARGE time for deadband decay reference (if CHARGE has occurred)
+        if self.aw.qmc.timeindex[0] > -1:
+            charge_time = self.aw.qmc.timex[self.aw.qmc.timeindex[0]]
+            self.aw.qmc.pid.setDeadbandChargeTime(charge_time)
+        else:
+            self.aw.qmc.pid.setDeadbandChargeTime(None)
 
 
     # if send_command is False, the pidOn command is not forwarded to the external PID (TC4, Kaleido, ..)

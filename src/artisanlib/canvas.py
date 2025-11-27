@@ -11127,6 +11127,36 @@ class tgraphcanvas(FigureCanvas):
                                 # first draw the fill if any
                                 if not self.flagstart and self.aw.extraFill2[i] > 0:
                                     self.ax.fill_between(self.extratimex[i], 0, visible_extratemp2,transform=trans,color=self.extradevicecolor2[i],alpha=self.aw.extraFill2[i]/100.,sketch_params=None)
+                                # Draw PID deadband decay as shaded area around SV (device 22)
+                                if (self.aw.qmc.extradevices[i] == 22 and self.Controlbuttonflag and
+                                    not self.aw.pidcontrol.externalPIDControl() and
+                                    self.pid.deadband_initial > 0 and self.pid.deadband_duration > 0 and
+                                    self.pid.deadband_charge_time is not None and len(visible_extratemp2) > 0):
+                                    try:
+                                        # Calculate deadband at each time point
+                                        deadband_upper = []
+                                        deadband_lower = []
+                                        for j, tx in enumerate(self.extratimex[i]):
+                                            if not numpy.isnan(visible_extratemp2[j]):
+                                                elapsed = tx - self.pid.deadband_charge_time
+                                                if elapsed >= 0 and elapsed < self.pid.deadband_duration:
+                                                    # Linear decay
+                                                    decay_factor = 1.0 - (elapsed / self.pid.deadband_duration)
+                                                    current_deadband = self.pid.deadband_initial * decay_factor
+                                                    deadband_upper.append(visible_extratemp2[j] + current_deadband)
+                                                    deadband_lower.append(visible_extratemp2[j] - current_deadband)
+                                                else:
+                                                    # No deadband (either before CHARGE or after decay period)
+                                                    deadband_upper.append(visible_extratemp2[j])
+                                                    deadband_lower.append(visible_extratemp2[j])
+                                            else:
+                                                deadband_upper.append(numpy.nan)
+                                                deadband_lower.append(numpy.nan)
+                                        # Draw shaded area with same color as SV line but semi-transparent
+                                        self.ax.fill_between(self.extratimex[i], deadband_lower, deadband_upper,
+                                            transform=trans, color=self.extradevicecolor2[i], alpha=0.2, sketch_params=None)
+                                    except Exception as ex: # pylint: disable=broad-except
+                                        _log.exception(ex)
                                 self.extratemp2lines.append(self.ax.plot(self.extratimex[i],visible_extratemp2,transform=trans,color=self.extradevicecolor2[i],
                                     sketch_params=None,
                                     path_effects=self.line_path_effects(self.glow, self.patheffects, self.aw.light_background_p, self.extralinewidths2[i],self.extradevicecolor2[i]),
@@ -14342,6 +14372,9 @@ class tgraphcanvas(FigureCanvas):
                         ## deactivate autoCHARGE
                         self.timeindex[0] = -1
                         removed = True
+                        # Clear PID deadband charge time when CHARGE is removed
+                        if self.Controlbuttonflag and not self.aw.pidcontrol.externalPIDControl():
+                            self.pid.setDeadbandChargeTime(None)
                         st1 = self.aw.arabicReshape(QApplication.translate('Label', 'CHARGE'))
                         st1 = self.__dijkstra_to_ascii(st1)
                         if len(self.l_annotations) > 1 and self.l_annotations[-1].get_text() == st1:
@@ -14385,6 +14418,10 @@ class tgraphcanvas(FigureCanvas):
                                 return
                             if self.aw.pidcontrol.pidOnCHARGE and not self.aw.pidcontrol.pidActive: # Arduino/TC4, Hottop, MODBUS
                                 self.aw.pidcontrol.pidOn()
+                            # Update PID deadband charge time reference when CHARGE is set
+                            if self.Controlbuttonflag and not self.aw.pidcontrol.externalPIDControl():
+                                charge_time = self.timex[self.timeindex[0]]
+                                self.pid.setDeadbandChargeTime(charge_time)
                         if self.chargeTimerPeriod > 0:
                             self.aw.setTimerColor('timer')
                         try:

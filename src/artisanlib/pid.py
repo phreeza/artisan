@@ -106,7 +106,7 @@ class PID:
         'integral_just_reset',
         'deadband_initial',
         'deadband_duration',
-        'deadband_start_time',
+        'deadband_charge_time',
     ]
 
     def __init__(
@@ -189,7 +189,7 @@ class PID:
         # Deadband decay settings
         self.deadband_initial: float = 0.0  # Initial deadband value (in same units as error)
         self.deadband_duration: float = 0.0  # Duration over which deadband decays to 0 (in seconds)
-        self.deadband_start_time: float|None = None  # Time when PID was initialized/started
+        self.deadband_charge_time: float|None = None  # CHARGE event timestamp (reference for deadband decay)
 
     def _smooth_output(self, output: float) -> float:
         # create or update smoothing decay weights
@@ -372,11 +372,11 @@ class PID:
             now = time.time()
             err = self.target - i
 
-            # Apply deadband decay if enabled
+            # Apply deadband decay if enabled (relative to CHARGE event)
             if (self.deadband_initial > 0 and self.deadband_duration > 0 and
-                self.deadband_start_time is not None):
-                elapsed = now - self.deadband_start_time
-                if elapsed < self.deadband_duration:
+                self.deadband_charge_time is not None):
+                elapsed = now - self.deadband_charge_time
+                if elapsed >= 0 and elapsed < self.deadband_duration:
                     # Calculate linearly decaying deadband
                     decay_factor = 1.0 - (elapsed / self.deadband_duration)
                     current_deadband = self.deadband_initial * decay_factor
@@ -520,10 +520,8 @@ class PID:
             # Reset integral windup prevention state
             self.integral_just_reset = False
 
-            # Reset deadband decay start time
-            self.deadband_start_time = time.time()
-
             # Note: Integral windup prevention settings are not reset as they are configuration
+            # Note: deadband_charge_time is not reset here - it must be set externally when CHARGE occurs
         finally:
             if lock:
                 self.pidSemaphore.release(1)
@@ -767,5 +765,17 @@ class PID:
         try:
             self.pidSemaphore.acquire(1)
             return (self.deadband_initial, self.deadband_duration)
+        finally:
+            self.pidSemaphore.release(1)
+
+    def setDeadbandChargeTime(self, charge_time: float|None) -> None:
+        """Set the CHARGE event timestamp for deadband decay reference.
+
+        Args:
+            charge_time: Unix timestamp of CHARGE event, or None to disable
+        """
+        try:
+            self.pidSemaphore.acquire(1)
+            self.deadband_charge_time = charge_time
         finally:
             self.pidSemaphore.release(1)
